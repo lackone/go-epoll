@@ -36,8 +36,8 @@ func NewReactor(demultiplexerType EventDemultiplexerType, demultiplexerSize int,
 	}, nil
 }
 
-// 获取fd最终分配到哪个复用器下面
-func (r *Reactor) getIndex(ev Event) int {
+// 获取event最终分配到哪个复用器下面
+func (r *Reactor) GetIndex(ev Event) int {
 	return ev.Fd % r.demultiplexerSize
 }
 
@@ -46,7 +46,7 @@ func (r *Reactor) AddHandler(ev Event, fn EventHandler) error {
 	r.handlersLock.Lock()
 	defer r.handlersLock.Unlock()
 
-	index := r.getIndex(ev)
+	index := r.GetIndex(ev)
 
 	if r.handlers[index] == nil {
 		r.handlers[index] = make(map[int]EventHandler)
@@ -61,7 +61,7 @@ func (r *Reactor) DelHandler(ev Event) error {
 	r.handlersLock.Lock()
 	defer r.handlersLock.Unlock()
 
-	index := r.getIndex(ev)
+	index := r.GetIndex(ev)
 
 	if _, ok := r.handlers[index]; !ok {
 		return errors.New("no handler")
@@ -77,7 +77,7 @@ func (r *Reactor) ModHandler(ev Event, fn EventHandler) error {
 	r.handlersLock.Lock()
 	defer r.handlersLock.Unlock()
 
-	index := r.getIndex(ev)
+	index := r.GetIndex(ev)
 
 	if r.handlers[index] == nil {
 		r.handlers[index] = make(map[int]EventHandler)
@@ -103,7 +103,7 @@ func (r *Reactor) Run() {
 					return
 				}
 				for _, ev := range events {
-					go r.handlers[r.getIndex(*ev)][ev.Fd](ev)
+					go r.handlers[r.GetIndex(*ev)][ev.Fd](ev)
 				}
 			}
 		}(d)
