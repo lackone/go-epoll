@@ -3,6 +3,7 @@ package go_epoll
 import (
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io"
 	"net"
 	"net/http"
@@ -74,4 +75,26 @@ func GetExternalIP() (string, error) {
 		return "", err
 	}
 	return string(all), nil
+}
+
+// 获取地址
+func GetSockAddrInet4(addr string) (*unix.SockaddrInet4, error) {
+	addrPort, err := netip.ParseAddrPort(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	inet4 := &unix.SockaddrInet4{
+		Port: int(addrPort.Port()),
+	}
+	copy(inet4.Addr[:], net.ParseIP(addrPort.Addr().String()).To4())
+
+	return inet4, nil
+}
+
+// 获取IP
+func GetIPBySockAddr(sa unix.Sockaddr) string {
+	inet4 := sa.(*unix.SockaddrInet4)
+	addr := net.IPv4(inet4.Addr[0], inet4.Addr[1], inet4.Addr[2], inet4.Addr[3]).To4().String()
+	return addr
 }

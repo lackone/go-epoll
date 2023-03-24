@@ -12,16 +12,17 @@ type Reactor struct {
 	handlersLock      sync.RWMutex                 //handler锁
 	wg                sync.WaitGroup               //等待组
 	totalEventNums    int32                        //监控的Event数量
+	workPool          *WorkPool                    //工作池
 }
 
-func NewReactor(demultiplexerType EventDemultiplexerType, demultiplexerSize int, eventSize int) (*Reactor, error) {
-	if demultiplexerSize <= 0 {
+func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*Reactor, error) {
+	if dSize <= 0 {
 		return nil, DemultiplexerSizeError
 	}
 
 	demultiplexer := make(map[int]EventDemultiplexer)
-	for i := 0; i < demultiplexerSize; i++ {
-		d, err := NewEventDemultiplexer(demultiplexerType, eventSize)
+	for i := 0; i < dSize; i++ {
+		d, err := NewEventDemultiplexer(dType, eventSize)
 		if err != nil {
 			return nil, err
 		}
@@ -30,11 +31,12 @@ func NewReactor(demultiplexerType EventDemultiplexerType, demultiplexerSize int,
 
 	return &Reactor{
 		demultiplexer:     demultiplexer,
-		demultiplexerSize: demultiplexerSize,
+		demultiplexerSize: dSize,
 		handlers:          make(map[int]map[int]EventHandler),
 		handlersLock:      sync.RWMutex{},
 		wg:                sync.WaitGroup{},
 		totalEventNums:    0,
+		workPool:          NewWorkPool(workCount),
 	}, nil
 }
 
@@ -71,7 +73,7 @@ func (r *Reactor) DelHandler(ev Event) error {
 	index := r.GetIndex(ev)
 
 	if _, ok := r.handlers[index]; !ok {
-		return HandlerNotFound
+		return EventHandlerNotFound
 	}
 
 	delete(r.handlers[index], ev.Fd)
@@ -101,7 +103,12 @@ func (r *Reactor) ModHandler(ev Event, handler EventHandler) error {
 
 // 运行，等待事件发，并调用handler
 func (r *Reactor) Run() {
-	defer r.Close()
+	defer func() {
+		r.Close()
+		r.workPool.Close()
+	}()
+
+	go r.workPool.Run()
 
 	r.wg.Add(r.demultiplexerSize)
 
@@ -115,15 +122,11 @@ func (r *Reactor) Run() {
 					return
 				}
 				for _, ev := range events {
-					if ev.IsRead() {
-						r.handlers[r.GetIndex(*ev)][ev.Fd].readFn(ev)
-					}
-					if ev.IsWrite() {
-						r.handlers[r.GetIndex(*ev)][ev.Fd].writeFn(ev)
-					}
-					if ev.IsError() {
-						r.handlers[r.GetIndex(*ev)][ev.Fd].errorFn(ev)
-					}
+					//把事件压入工作池中执行
+					r.workPool.PushTaskFunc(func(args ...interface{}) {
+						e, _ := args[0].(*Event)
+						r.handlers[r.GetIndex(*e)][e.Fd](e)
+					}, ev)
 				}
 			}
 		}(d)
