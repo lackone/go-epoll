@@ -1,8 +1,8 @@
 package go_epoll
 
 import (
-	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 type Reactor struct {
@@ -11,11 +11,12 @@ type Reactor struct {
 	handlers          map[int]map[int]EventHandler //事件handler
 	handlersLock      sync.RWMutex                 //handler锁
 	wg                sync.WaitGroup               //等待组
+	totalEventNums    int32                        //监控的Event数量
 }
 
 func NewReactor(demultiplexerType EventDemultiplexerType, demultiplexerSize int, eventSize int) (*Reactor, error) {
 	if demultiplexerSize <= 0 {
-		return nil, errors.New("demultiplexerSize >= 1")
+		return nil, DemultiplexerSizeError
 	}
 
 	demultiplexer := make(map[int]EventDemultiplexer)
@@ -33,6 +34,7 @@ func NewReactor(demultiplexerType EventDemultiplexerType, demultiplexerSize int,
 		handlers:          make(map[int]map[int]EventHandler),
 		handlersLock:      sync.RWMutex{},
 		wg:                sync.WaitGroup{},
+		totalEventNums:    0,
 	}, nil
 }
 
@@ -42,7 +44,7 @@ func (r *Reactor) GetIndex(ev Event) int {
 }
 
 // 添加事件handler
-func (r *Reactor) AddHandler(ev Event, fn EventHandler) error {
+func (r *Reactor) AddHandler(ev Event, handler EventHandler) error {
 	r.handlersLock.Lock()
 	defer r.handlersLock.Unlock()
 
@@ -51,9 +53,14 @@ func (r *Reactor) AddHandler(ev Event, fn EventHandler) error {
 	if r.handlers[index] == nil {
 		r.handlers[index] = make(map[int]EventHandler)
 	}
-	r.handlers[index][ev.Fd] = fn
+	r.handlers[index][ev.Fd] = handler
 
-	return r.demultiplexer[index].AddEvent(ev)
+	err := r.demultiplexer[index].AddEvent(ev)
+	if err == nil {
+		atomic.AddInt32(&r.totalEventNums, 1)
+	}
+
+	return err
 }
 
 // 删除事件handler
@@ -64,16 +71,21 @@ func (r *Reactor) DelHandler(ev Event) error {
 	index := r.GetIndex(ev)
 
 	if _, ok := r.handlers[index]; !ok {
-		return errors.New("no handler")
+		return HandlerNotFound
 	}
 
 	delete(r.handlers[index], ev.Fd)
 
-	return r.demultiplexer[index].DelEvent(ev)
+	err := r.demultiplexer[index].DelEvent(ev)
+	if err == nil {
+		atomic.AddInt32(&r.totalEventNums, -1)
+	}
+
+	return err
 }
 
 // 修改事件handler
-func (r *Reactor) ModHandler(ev Event, fn EventHandler) error {
+func (r *Reactor) ModHandler(ev Event, handler EventHandler) error {
 	r.handlersLock.Lock()
 	defer r.handlersLock.Unlock()
 
@@ -82,7 +94,7 @@ func (r *Reactor) ModHandler(ev Event, fn EventHandler) error {
 	if r.handlers[index] == nil {
 		r.handlers[index] = make(map[int]EventHandler)
 	}
-	r.handlers[index][ev.Fd] = fn
+	r.handlers[index][ev.Fd] = handler
 
 	return r.demultiplexer[index].ModEvent(ev)
 }
@@ -103,7 +115,15 @@ func (r *Reactor) Run() {
 					return
 				}
 				for _, ev := range events {
-					go r.handlers[r.GetIndex(*ev)][ev.Fd](ev)
+					if ev.IsRead() {
+						r.handlers[r.GetIndex(*ev)][ev.Fd].readFn(ev)
+					}
+					if ev.IsWrite() {
+						r.handlers[r.GetIndex(*ev)][ev.Fd].writeFn(ev)
+					}
+					if ev.IsError() {
+						r.handlers[r.GetIndex(*ev)][ev.Fd].errorFn(ev)
+					}
 				}
 			}
 		}(d)
@@ -114,6 +134,9 @@ func (r *Reactor) Run() {
 
 // 关闭
 func (r *Reactor) Close() {
+	if r.demultiplexerSize <= 0 {
+		return
+	}
 	for _, d := range r.demultiplexer {
 		d.Close()
 	}

@@ -1,7 +1,5 @@
 package go_epoll
 
-import "errors"
-
 type EventDemultiplexerType uint32
 
 const (
@@ -28,6 +26,6 @@ func NewEventDemultiplexer(t EventDemultiplexerType, eventSize int) (EventDemult
 	case EpollType:
 		return NewEpoll(eventSize)
 	default:
-		return nil, errors.New("type unknown")
+		return nil, DemultiplexerTypeUnknown
 	}
 }
