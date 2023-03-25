@@ -5,8 +5,8 @@ import (
 )
 
 type Epoll struct {
-	epollFD int
-	events  []unix.EpollEvent
+	epollFD int               //epoll文件描述符
+	events  []unix.EpollEvent //事件
 }
 
 // 创建epoll

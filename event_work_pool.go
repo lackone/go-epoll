@@ -2,42 +2,40 @@ package go_epoll
 
 import "sync"
 
-type TaskHandler func(args ...interface{})
-
-type Task struct {
-	fn   TaskHandler
-	args []interface{}
+type EventTask struct {
+	fn EventHandler
+	ev *Event
 }
 
-func NewTask(fn TaskHandler, args ...interface{}) *Task {
-	return &Task{
-		fn:   fn,
-		args: args,
+func NewTask(fn EventHandler, ev *Event) *EventTask {
+	return &EventTask{
+		fn: fn,
+		ev: ev,
 	}
 }
 
-func (t *Task) Exec() {
-	t.fn(t.args...)
+func (t *EventTask) Exec() {
+	t.fn(t.ev)
 }
 
-type WorkPool struct {
+type EventWorkPool struct {
 	workCount int
-	taskQueue chan *Task
+	taskQueue chan *EventTask
 	wg        sync.WaitGroup
 	stop      chan struct{}
 	onPanic   func(msg interface{})
 }
 
-func NewWorkPool(workCount int) *WorkPool {
-	return &WorkPool{
+func NewEventWorkPool(workCount int) *EventWorkPool {
+	return &EventWorkPool{
 		workCount: workCount,
-		taskQueue: make(chan *Task),
+		taskQueue: make(chan *EventTask),
 		wg:        sync.WaitGroup{},
 		stop:      make(chan struct{}),
 	}
 }
 
-func (wp *WorkPool) Run() {
+func (wp *EventWorkPool) Run() {
 	wp.wg.Add(wp.workCount)
 
 	for i := 0; i < wp.workCount; i++ {
@@ -69,20 +67,20 @@ func (wp *WorkPool) Run() {
 	wp.wg.Wait()
 }
 
-func (wp *WorkPool) Close() {
+func (wp *EventWorkPool) Close() {
 	wp.stop <- struct{}{}
 	close(wp.stop)
 	close(wp.taskQueue)
 }
 
-func (wp *WorkPool) OnPanic(fn func(msg interface{})) {
+func (wp *EventWorkPool) OnPanic(fn func(msg interface{})) {
 	wp.onPanic = fn
 }
 
-func (wp *WorkPool) PushTask(t *Task) {
+func (wp *EventWorkPool) PushTask(t *EventTask) {
 	wp.taskQueue <- t
 }
 
-func (wp *WorkPool) PushTaskFunc(fn TaskHandler, args ...interface{}) {
-	wp.taskQueue <- NewTask(fn, args...)
+func (wp *EventWorkPool) PushTaskFunc(fn EventHandler, ev *Event) {
+	wp.taskQueue <- NewTask(fn, ev)
 }

@@ -12,7 +12,7 @@ type Reactor struct {
 	handlersLock      sync.RWMutex                 //handler锁
 	wg                sync.WaitGroup               //等待组
 	totalEventNums    int32                        //监控的Event数量
-	workPool          *WorkPool                    //工作池
+	eventWorkPool     *EventWorkPool               //事件工作池
 }
 
 func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*Reactor, error) {
@@ -36,7 +36,7 @@ func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCoun
 		handlersLock:      sync.RWMutex{},
 		wg:                sync.WaitGroup{},
 		totalEventNums:    0,
-		workPool:          NewWorkPool(workCount),
+		eventWorkPool:     NewEventWorkPool(workCount),
 	}, nil
 }
 
@@ -105,10 +105,10 @@ func (r *Reactor) ModHandler(ev Event, handler EventHandler) error {
 func (r *Reactor) Run() {
 	defer func() {
 		r.Close()
-		r.workPool.Close()
+		r.eventWorkPool.Close()
 	}()
 
-	go r.workPool.Run()
+	go r.eventWorkPool.Run()
 
 	r.wg.Add(r.demultiplexerSize)
 
@@ -117,16 +117,14 @@ func (r *Reactor) Run() {
 			defer r.wg.Done()
 
 			for {
+				//等待事件触发
 				events, err := d.Wait()
 				if err != nil {
 					return
 				}
 				for _, ev := range events {
 					//把事件压入工作池中执行
-					r.workPool.PushTaskFunc(func(args ...interface{}) {
-						e, _ := args[0].(*Event)
-						r.handlers[r.GetIndex(*e)][e.Fd](e)
-					}, ev)
+					r.eventWorkPool.PushTaskFunc(r.handlers[r.GetIndex(*ev)][ev.Fd], ev)
 				}
 			}
 		}(d)

@@ -96,5 +96,5 @@ func GetSockAddrInet4(addr string) (*unix.SockaddrInet4, error) {
 func GetIPBySockAddr(sa unix.Sockaddr) string {
 	inet4 := sa.(*unix.SockaddrInet4)
 	addr := net.IPv4(inet4.Addr[0], inet4.Addr[1], inet4.Addr[2], inet4.Addr[3]).To4().String()
-	return addr
+	return fmt.Sprintf("%s:%d", addr, inet4.Port)
 }

@@ -2,6 +2,7 @@ package go_epoll
 
 type EventDemultiplexerType uint32
 
+// 多路复用器类型
 const (
 	EpollType EventDemultiplexerType = iota + 1
 )
