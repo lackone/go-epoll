@@ -13,6 +13,7 @@ type Reactor struct {
 	wg                sync.WaitGroup               //等待组
 	totalEventNums    int32                        //监控的Event数量
 	eventWorkPool     *EventWorkPool               //事件工作池
+	stop              chan struct{}
 }
 
 func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*Reactor, error) {
@@ -37,6 +38,7 @@ func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCoun
 		wg:                sync.WaitGroup{},
 		totalEventNums:    0,
 		eventWorkPool:     NewEventWorkPool(workCount),
+		stop:              make(chan struct{}),
 	}, nil
 }
 
@@ -103,11 +105,6 @@ func (r *Reactor) ModHandler(ev Event, handler EventHandler) error {
 
 // 运行，等待事件发，并调用handler
 func (r *Reactor) Run() {
-	defer func() {
-		r.Close()
-		r.eventWorkPool.Close()
-	}()
-
 	go r.eventWorkPool.Run()
 
 	r.wg.Add(r.demultiplexerSize)
@@ -117,14 +114,19 @@ func (r *Reactor) Run() {
 			defer r.wg.Done()
 
 			for {
-				//等待事件触发
-				events, err := d.Wait()
-				if err != nil {
+				select {
+				case <-r.stop:
 					return
-				}
-				for _, ev := range events {
-					//把事件压入工作池中执行
-					r.eventWorkPool.PushTaskFunc(r.handlers[r.GetIndex(*ev)][ev.Fd], ev)
+				default:
+					//等待事件触发
+					events, err := d.Wait()
+					if err != nil {
+						return
+					}
+					for _, ev := range events {
+						//把事件压入工作池中执行
+						r.eventWorkPool.PushTaskFunc(r.handlers[r.GetIndex(*ev)][ev.Fd], ev)
+					}
 				}
 			}
 		}(d)
@@ -135,10 +137,12 @@ func (r *Reactor) Run() {
 
 // 关闭
 func (r *Reactor) Close() {
-	if r.demultiplexerSize <= 0 {
-		return
-	}
 	for _, d := range r.demultiplexer {
 		d.Close()
 	}
+
+	r.stop <- struct{}{}
+	close(r.stop)
+
+	r.eventWorkPool.Close()
 }

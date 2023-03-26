@@ -64,16 +64,19 @@ func eventToEpollEvent(ev Event) *unix.EpollEvent {
 	epEv.Fd = int32(ev.Fd)
 
 	if ev.EventType&EventRead != 0 {
-		epEv.Events |= unix.EPOLLIN | unix.EPOLLPRI
+		epEv.Events |= unix.EPOLLIN | unix.EPOLLPRI | unix.EPOLLHUP | unix.EPOLLRDHUP
 	}
 	if ev.EventType&EventWrite != 0 {
 		epEv.Events |= unix.EPOLLOUT
 	}
 	if ev.EventType&EventError != 0 {
-		epEv.Events |= unix.EPOLLERR | unix.EPOLLHUP | unix.EPOLLRDHUP
+		epEv.Events |= unix.EPOLLERR
 	}
 	if ev.EventType&EventET != 0 {
 		epEv.Events |= unix.EPOLLET
+	}
+	if ev.EventType&EventOneShot != 0 {
+		epEv.Events |= unix.EPOLLONESHOT
 	}
 
 	return &epEv
@@ -93,17 +96,21 @@ func epollEventToEvent(epEv unix.EpollEvent) *Event {
 	ev := Event{}
 	ev.Fd = int(epEv.Fd)
 
-	// 可读事件
-	if epEv.Events&(unix.EPOLLIN|unix.EPOLLPRI) != 0 {
+	// 没有数据可读，并且连接已关闭
+	if (epEv.Events&unix.EPOLLHUP != 0) && (epEv.Events&unix.EPOLLIN == 0) {
+		ev.EventType |= EventClose
+	}
+	// 出现错误
+	if epEv.Events&unix.EPOLLERR != 0 {
+		ev.EventType |= EventError
+	}
+	// 可读，或者连接已经半半闭
+	if epEv.Events&(unix.EPOLLIN|unix.EPOLLPRI|unix.EPOLLRDHUP) != 0 {
 		ev.EventType |= EventRead
 	}
-	// 可写事件
-	if epEv.Events&(unix.EPOLLOUT) != 0 {
+	// 可写
+	if epEv.Events&unix.EPOLLOUT != 0 {
 		ev.EventType |= EventWrite
-	}
-	// 出错
-	if epEv.Events&(unix.EPOLLERR|unix.EPOLLHUP|unix.EPOLLRDHUP) != 0 {
-		ev.EventType |= EventError
 	}
 
 	return &ev

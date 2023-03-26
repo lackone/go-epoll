@@ -3,9 +3,9 @@ package main
 import "fmt"
 
 func main() {
-	b := make([]byte, 3)
+	var a map[int]string
 
-	c := b[:0]
-	
-	fmt.Println(c, len(c), cap(c))
+	for _, v := range a {
+		fmt.Println(v)
+	}
 }

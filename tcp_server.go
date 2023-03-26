@@ -9,16 +9,18 @@ import (
 type TcpServerHandler interface {
 	OnConnect(conn *Conn)
 	OnData(conn *Conn)
+	OnError(conn *Conn)
 	OnClose(conn *Conn)
 }
 
 type TcpServer struct {
-	addr       string
-	fd         int
-	reactor    *Reactor
-	handler    TcpServerHandler
-	connManage *ConnManage
-	bufPool    *sync.Pool
+	addr       string           //地址
+	fd         int              //文件描述符
+	reactor    *Reactor         //多路复用反应堆
+	handler    TcpServerHandler //回调函数
+	connManage *ConnManage      //连接管理
+	bufPool    *sync.Pool       //缓冲池，用于连接的读与写
+	stop       chan struct{}    //关闭通道
 }
 
 func NewServer(addr string, dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*TcpServer, error) {
@@ -33,6 +35,7 @@ func NewServer(addr string, dType EventDemultiplexerType, dSize int, eventSize i
 				return bytes.NewBuffer(b)
 			},
 		},
+		stop: make(chan struct{}),
 	}
 
 	s.reactor, err = NewReactor(dType, dSize, eventSize, workCount)
@@ -41,6 +44,11 @@ func NewServer(addr string, dType EventDemultiplexerType, dSize int, eventSize i
 	}
 
 	return s, nil
+}
+
+// 设置回调函数
+func (s *TcpServer) SetHandler(handler TcpServerHandler) {
+	s.handler = handler
 }
 
 // 监听
@@ -85,45 +93,51 @@ func (s *TcpServer) Accept() (nfd int, addr string, err error) {
 		return
 	}
 
-	//新来的连接，往反应堆里添加读事件，注意这里使用ET模式
-	err = s.reactor.AddHandler(Event{
-		Fd:        nfd,
-		EventType: EventRead | EventError | EventET,
-	}, s.connEventHandler)
+	//转换成IP字符串
+	addr = GetIPBySockAddr(sa)
 
+	//创建连接
+	conn, err := NewConn(nfd, addr, s)
 	if err != nil {
 		return
 	}
 
-	//转换成IP字符串
-	addr = GetIPBySockAddr(sa)
-
-	conn := NewConn(nfd, addr, s)
+	//添加连接
 	s.connManage.AddConn(conn)
-
-	//处理连接回调
-	s.handler.OnConnect(conn)
 
 	return
 }
 
-// 连接事件处理
-func (s *TcpServer) connEventHandler(ev *Event) {
-	conn, ok := s.connManage.GetConn(ev.Fd)
-	if !ok {
-		return
+// 运行
+func (s *TcpServer) Run() error {
+	err := s.Listen()
+	if err != nil {
+		return err
 	}
-	if ev.IsError() {
-		s.handler.OnClose(conn)
-		conn.Close()
-		return
+
+	for {
+		select {
+		case <-s.stop:
+			return nil
+		default:
+			_, _, err = s.Accept()
+			if err != nil {
+				if err == unix.EINTR {
+					continue
+				}
+			}
+		}
 	}
-	if ev.IsRead() {
-		conn.readFromFD()
-	}
-	if ev.IsWrite() {
-		conn.writeFromFD()
-	}
+}
+
+// 关闭
+func (s *TcpServer) Close() {
+	s.stop <- struct{}{}
+	close(s.stop)
+
+	s.connManage.Close()
+
+	s.reactor.Close()
 }
 
 // 使Socket重用地址

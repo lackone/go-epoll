@@ -1,10 +1,12 @@
 package go_epoll
 
-import "sync"
+import (
+	"sync"
+)
 
 type ConnManage struct {
-	conns     map[int]*Conn
-	connsLock sync.RWMutex
+	conns     map[int]*Conn //所有连接
+	connsLock sync.RWMutex  //连接锁
 }
 
 func NewConnManage() *ConnManage {
@@ -31,4 +33,10 @@ func (cm *ConnManage) GetConn(fd int) (*Conn, bool) {
 	defer cm.connsLock.RUnlock()
 	conn, ok := cm.conns[fd]
 	return conn, ok
+}
+
+func (cm *ConnManage) Close() {
+	for _, c := range cm.conns {
+		c.Close()
+	}
 }

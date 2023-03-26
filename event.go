@@ -5,8 +5,10 @@ type EventType uint32
 const (
 	EventRead EventType = 1 << iota
 	EventWrite
+	EventClose
 	EventError
 	EventET
+	EventOneShot
 )
 
 type Event struct {
@@ -23,6 +25,13 @@ func (e *Event) IsRead() bool {
 
 func (e *Event) IsWrite() bool {
 	if e.EventType&EventWrite != 0 {
+		return true
+	}
+	return false
+}
+
+func (e *Event) IsClose() bool {
+	if e.EventType&EventClose != 0 {
 		return true
 	}
 	return false
