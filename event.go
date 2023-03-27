@@ -27,7 +27,7 @@ func (et EventType) String() string {
 		str = append(str, "write")
 	}
 	if et&EventClose != 0 {
-		str = append(str, "write")
+		str = append(str, "close")
 	}
 	if et&EventError != 0 {
 		str = append(str, "error")

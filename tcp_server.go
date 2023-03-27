@@ -56,7 +56,7 @@ func (s *TcpServer) SetHandler(handler TcpServerHandler) {
 func (s *TcpServer) Listen() error {
 	var err error
 	// 创建监听socket
-	s.fd, err = unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+	s.fd, err = unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return err
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"reflect"
+	"syscall"
 )
 
 // 获取连接的FD
@@ -97,4 +98,16 @@ func GetIPBySockAddr(sa unix.Sockaddr) string {
 	inet4 := sa.(*unix.SockaddrInet4)
 	addr := net.IPv4(inet4.Addr[0], inet4.Addr[1], inet4.Addr[2], inet4.Addr[3]).To4().String()
 	return fmt.Sprintf("%s:%d", addr, inet4.Port)
+}
+
+// 设置最大打开文件描述符数量
+func SetLimit() {
+	var rLimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		panic(err)
+	}
+	rLimit.Cur = rLimit.Max
+	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		panic(err)
+	}
 }
