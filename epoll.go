@@ -1,6 +1,7 @@
 package go_epoll
 
 import (
+	"context"
 	"golang.org/x/sys/unix"
 )
 
@@ -13,6 +14,7 @@ type Epoll struct {
 func NewEpoll(eventSize int) (*Epoll, error) {
 	fd, err := unix.EpollCreate1(unix.EPOLL_CLOEXEC)
 	if err != nil {
+		logger.Error(context.Background(), "EpollCreate1 error : ", err.Error())
 		return nil, err
 	}
 	return &Epoll{
@@ -44,6 +46,7 @@ retry:
 		if err == unix.EINTR {
 			goto retry
 		}
+		logger.Error(context.Background(), "EpollWait error : ", err.Error())
 		return nil, err
 	}
 	evs := make([]*Event, 0)

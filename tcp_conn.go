@@ -2,6 +2,7 @@ package go_epoll
 
 import (
 	"bytes"
+	"context"
 	"golang.org/x/sys/unix"
 	"io"
 	"sync"
@@ -43,6 +44,7 @@ func NewConn(fd int, addr string, s *TcpServer) (*Conn, error) {
 	}, conn.eventHandle)
 
 	if err != nil {
+		logger.Error(context.Background(), "reactor AddHandler error : ", err.Error())
 		return nil, err
 	}
 
@@ -87,10 +89,7 @@ func (c *Conn) Write(p []byte) (int, error) {
 
 	n, err := c.writeBuf.Write(p)
 
-	c.server.reactor.ModHandler(Event{
-		Fd:        c.fd,
-		EventType: EventWrite | EventET | EventOneShot,
-	}, c.eventHandle)
+	c.eventHandleWrite()
 
 	return n, err
 }
@@ -160,11 +159,14 @@ func (c *Conn) eventHandleRead() {
 			}
 			// 内核中没有数据可读，为了防止数据丢失，重新注册事件，尝试再次读
 			if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-				c.server.reactor.ModHandler(Event{
+				if e := c.server.reactor.ModHandler(Event{
 					Fd:        c.fd,
 					EventType: EventRead | EventError | EventET | EventOneShot,
-				}, c.eventHandle)
+				}, c.eventHandle); e != nil {
+					logger.Error(context.Background(), "ModHandler read error : ", err.Error())
+				}
 			}
+			logger.Error(context.Background(), "eventHandleRead error : ", err.Error())
 			break
 		}
 		if n == 0 {
@@ -201,11 +203,14 @@ func (c *Conn) eventHandleWrite() {
 			}
 			// 内核写缓冲区已满，为了防止数据丢失，重新注册事件，尝试再次写
 			if err == unix.EAGAIN || err == unix.EWOULDBLOCK {
-				c.server.reactor.ModHandler(Event{
+				if e := c.server.reactor.ModHandler(Event{
 					Fd:        c.fd,
 					EventType: EventWrite | EventET | EventOneShot,
-				}, c.eventHandle)
+				}, c.eventHandle); e != nil {
+					logger.Error(context.Background(), "ModHandler write error : ", e.Error())
+				}
 			}
+			logger.Error(context.Background(), "eventHandleWrite error : ", err.Error())
 			break
 		}
 		if n == 0 {

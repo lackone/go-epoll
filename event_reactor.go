@@ -1,6 +1,7 @@
 package go_epoll
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 )
@@ -25,6 +26,7 @@ func NewReactor(dType EventDemultiplexerType, dSize int, eventSize int, workCoun
 	for i := 0; i < dSize; i++ {
 		d, err := NewEventDemultiplexer(dType, eventSize)
 		if err != nil {
+			logger.Error(context.Background(), "NewEventDemultiplexer error : ", err.Error())
 			return nil, err
 		}
 		demultiplexer[i] = d
@@ -121,6 +123,7 @@ func (r *Reactor) Run() {
 					//等待事件触发
 					events, err := d.Wait()
 					if err != nil {
+						logger.Error(context.Background(), "wait error : ", err.Error())
 						return
 					}
 					for _, ev := range events {

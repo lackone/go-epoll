@@ -2,6 +2,7 @@ package go_epoll
 
 import (
 	"bytes"
+	"context"
 	"golang.org/x/sys/unix"
 	"sync"
 )
@@ -23,7 +24,7 @@ type TcpServer struct {
 	stop       chan struct{}    //关闭通道
 }
 
-func NewServer(addr string, dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*TcpServer, error) {
+func NewTcpServer(addr string, dType EventDemultiplexerType, dSize int, eventSize int, workCount int) (*TcpServer, error) {
 	var err error
 
 	s := &TcpServer{
@@ -55,7 +56,7 @@ func (s *TcpServer) SetHandler(handler TcpServerHandler) {
 func (s *TcpServer) Listen() error {
 	var err error
 	// 创建监听socket
-	s.fd, err = unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.O_NONBLOCK, 0)
+	s.fd, err = unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return err
 	}
@@ -115,6 +116,10 @@ func (s *TcpServer) Run() error {
 		return err
 	}
 
+	logger.Infof(context.Background(), "server[%s] run ...", s.addr)
+
+	go s.reactor.Run()
+
 	for {
 		select {
 		case <-s.stop:
@@ -125,6 +130,7 @@ func (s *TcpServer) Run() error {
 				if err == unix.EINTR {
 					continue
 				}
+				logger.Error(context.Background(), "Accept error : ", err.Error())
 			}
 		}
 	}
@@ -134,6 +140,8 @@ func (s *TcpServer) Run() error {
 func (s *TcpServer) Close() {
 	s.stop <- struct{}{}
 	close(s.stop)
+
+	unix.Close(s.fd)
 
 	s.connManage.Close()
 
