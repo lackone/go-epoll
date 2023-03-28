@@ -9,7 +9,7 @@ import (
 
 type TcpServerHandler interface {
 	OnConnect(conn *Conn)
-	OnData(conn *Conn)
+	OnData(conn *Conn, data []byte)
 	OnError(conn *Conn)
 	OnClose(conn *Conn)
 }
@@ -19,6 +19,7 @@ type TcpServer struct {
 	fd         int              //文件描述符
 	reactor    *Reactor         //多路复用反应堆
 	handler    TcpServerHandler //回调函数
+	endecoder  EnDecoder        //编码解码
 	connManage *ConnManage      //连接管理
 	bufPool    *sync.Pool       //缓冲池，用于连接的读与写
 	stop       chan struct{}    //关闭通道
@@ -50,6 +51,11 @@ func NewTcpServer(addr string, dType EventDemultiplexerType, dSize int, eventSiz
 // 设置回调函数
 func (s *TcpServer) SetHandler(handler TcpServerHandler) {
 	s.handler = handler
+}
+
+// 设置编码解码
+func (s *TcpServer) SetEnDecoder(endecoder EnDecoder) {
+	s.endecoder = endecoder
 }
 
 // 监听

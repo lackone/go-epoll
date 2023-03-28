@@ -87,6 +87,14 @@ func (c *Conn) Write(p []byte) (int, error) {
 	c.wLock.Lock()
 	defer c.wLock.Unlock()
 
+	if c.server.endecoder != nil {
+		encode, err := c.server.endecoder.Encode(p)
+		if err != nil {
+			return 0, err
+		}
+		p = encode
+	}
+
 	n, err := c.writeBuf.Write(p)
 
 	c.eventHandleWrite()
@@ -129,6 +137,8 @@ func (c *Conn) eventHandle(ev *Event) {
 	//出错
 	if ev.IsError() {
 		c.eventHandleError()
+		c.Close()
+		return
 	}
 	//可读
 	if ev.IsRead() {
@@ -166,7 +176,9 @@ func (c *Conn) eventHandleRead() {
 					logger.Error(context.Background(), "ModHandler read error : ", err.Error())
 				}
 			}
-			logger.Error(context.Background(), "eventHandleRead error : ", err.Error())
+			if err != unix.EAGAIN && err != unix.EWOULDBLOCK {
+				logger.Error(context.Background(), "eventHandleRead error : ", err.Error())
+			}
 			break
 		}
 		if n == 0 {
@@ -177,9 +189,26 @@ func (c *Conn) eventHandleRead() {
 		if n > 0 {
 			//把从fd中读到的数据，写入我们自已的读buf中
 			c.readBuf.Write(c.rbuf[:n])
+
+			if c.server.endecoder == nil {
+				//如果没有设置编解码，则直接把buf中的数据全部取出，然后reset
+				c.server.handler.OnData(c, c.readBuf.Bytes())
+				c.readBuf.Reset()
+			} else {
+				//如果设置了编解码，for循环解码，直到IO.EOF
+				for {
+					decode, err := c.server.endecoder.Decode(c.readBuf)
+					if err != nil {
+						if err != io.EOF {
+							logger.Error(context.Background(), "Decode error : ", err.Error())
+						}
+						break
+					}
+					c.server.handler.OnData(c, decode)
+				}
+			}
 		}
 	}
-	c.server.handler.OnData(c)
 }
 
 // 对于写操作，如果写缓冲区满了，对于阻塞socket，写操作将阻塞住。对于非阻塞socket，写操作将立即返回-1，同时errno设置为EAGAIN
@@ -210,7 +239,9 @@ func (c *Conn) eventHandleWrite() {
 					logger.Error(context.Background(), "ModHandler write error : ", e.Error())
 				}
 			}
-			logger.Error(context.Background(), "eventHandleWrite error : ", err.Error())
+			if err != unix.EAGAIN && err != unix.EWOULDBLOCK {
+				logger.Error(context.Background(), "eventHandleWrite error : ", err.Error())
+			}
 			break
 		}
 		if n == 0 {
