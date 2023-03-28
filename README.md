@@ -1,5 +1,5 @@
 # go-epoll
-go 实现 epoll，基于边缘触发模式
+go 实现 epoll，基于边缘触发模式。
 
 ### 示例
 
