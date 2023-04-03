@@ -1,7 +1,6 @@
 package go_epoll
 
 import (
-	"bytes"
 	"context"
 	"golang.org/x/sys/unix"
 	"io"
@@ -10,17 +9,17 @@ import (
 )
 
 type Conn struct {
-	fd       int           //文件描述符
-	addr     string        //地址
-	isClose  int32         //0正常，1关闭
-	server   *TcpServer    //服务器指针
-	rbuf     []byte        //读缓冲
-	wbuf     []byte        //写缓冲
-	readBuf  *bytes.Buffer //从fd中读取的数据
-	writeBuf *bytes.Buffer //从fd中写入的数据
-	rLock    *sync.Mutex   //读锁
-	wLock    *sync.Mutex   //写锁
-	ext      interface{}   //扩展数据
+	fd       int         //文件描述符
+	addr     string      //地址
+	isClose  int32       //0正常，1关闭
+	server   *TcpServer  //服务器指针
+	rbuf     []byte      //读缓冲
+	wbuf     []byte      //写缓冲
+	readBuf  *Buffer     //从fd中读取的数据
+	writeBuf *Buffer     //从fd中写入的数据
+	rLock    *sync.Mutex //读锁
+	wLock    *sync.Mutex //写锁
+	ext      interface{} //扩展数据
 }
 
 func NewConn(fd int, addr string, s *TcpServer) (*Conn, error) {
@@ -31,8 +30,8 @@ func NewConn(fd int, addr string, s *TcpServer) (*Conn, error) {
 		server:   s,
 		rbuf:     make([]byte, 1024),
 		wbuf:     make([]byte, 1024),
-		readBuf:  s.bufPool.Get().(*bytes.Buffer),
-		writeBuf: s.bufPool.Get().(*bytes.Buffer),
+		readBuf:  s.bufPool.Get().(*Buffer),
+		writeBuf: s.bufPool.Get().(*Buffer),
 		rLock:    &sync.Mutex{},
 		wLock:    &sync.Mutex{},
 	}
@@ -199,7 +198,7 @@ func (c *Conn) eventHandleRead() {
 				for {
 					decode, err := c.server.endecoder.Decode(c.readBuf)
 					if err != nil {
-						if err != io.EOF {
+						if err != io.EOF && err != DataNotEnough {
 							logger.Error(context.Background(), "Decode error : ", err.Error())
 						}
 						break

@@ -1,7 +1,6 @@
 package go_epoll
 
 import (
-	"bytes"
 	"context"
 	"golang.org/x/sys/unix"
 	"sync"
@@ -33,8 +32,8 @@ func NewTcpServer(addr string, dType EventDemultiplexerType, dSize int, eventSiz
 		connManage: NewConnManage(),
 		bufPool: &sync.Pool{
 			New: func() any {
-				b := make([]byte, 0, 1024)
-				return bytes.NewBuffer(b)
+				b := make([]byte, 1024)
+				return NewBuffer(b)
 			},
 		},
 		stop: make(chan struct{}),

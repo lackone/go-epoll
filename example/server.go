@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	go_epoll "github.com/lackone/go-epoll"
-	"io"
 	"log"
 )
 
@@ -26,18 +25,42 @@ func (e *EnDecode) Encode(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (e *EnDecode) Decode(reader io.Reader) ([]byte, error) {
+// 注意，只有解码这里有点特殊，因为必须要解码一个完整的包，因为binary.Read会移动buffer中的start下标，如果解码未成功，需要重置start
+func (e *EnDecode) Decode(reader *go_epoll.Buffer) (data []byte, err error) {
+	start := reader.GetStart()
+
+	defer func() {
+		if err != nil {
+			//如果出错，则重置start
+			reader.SetStart(start)
+		}
+	}()
+
 	var length uint32
-	err := binary.Read(reader, binary.BigEndian, &length)
+	//尝试读取4个字节数据
+	_, err = reader.TryGet(4)
 	if err != nil {
 		return nil, err
 	}
-	buf := make([]byte, length-4)
-	err = binary.Read(reader, binary.BigEndian, buf)
+
+	err = binary.Read(reader, binary.BigEndian, &length)
 	if err != nil {
 		return nil, err
 	}
-	return buf, nil
+
+	data = make([]byte, length-4)
+
+	//尝试读取data长度的字节数据
+	_, err = reader.TryGet(len(data))
+	if err != nil {
+		return nil, err
+	}
+	err = binary.Read(reader, binary.BigEndian, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
 type Handler struct {
@@ -48,7 +71,7 @@ func (h *Handler) OnConnect(conn *go_epoll.Conn) {
 }
 
 func (h *Handler) OnData(conn *go_epoll.Conn, data []byte) {
-	fmt.Println("get client data : ", string(data))
+	fmt.Printf("get client[%s] data : %s\n", conn.GetAddr(), string(data))
 	conn.Write(data)
 }
 
